@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from "express"
-import AuthRouter from "./routes/authRouters"
+import AuthRouter from "./routes/authRoutes"
+import ItemRouter from "./routes/itemRoutes";
 import mongoose from "mongoose"
 import dotenv from "dotenv"
 dotenv.config()
@@ -14,7 +15,11 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+// Authentication routes
 app.use("/api/v1/auth", AuthRouter)
+
+// Found item routes
+app.use("/api/v1/items", ItemRouter);
 
 mongoose
   .connect(MONGO_URL)
