@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from "express"
 import AuthRouter from "./routes/authRoutes"
 import ItemRouter from "./routes/itemRoutes";
+import ChatRouter from "./routes/chatRoutes";
 import mongoose from "mongoose"
 import dotenv from "dotenv"
 dotenv.config()
@@ -8,7 +9,7 @@ dotenv.config()
 import cors from "cors"
 
 const MONGO_URL = process.env.MONGO_LOCAL_URL || ""
-const PORT = process.env.PORT || 6000
+const PORT = process.env.PORT || 3000
 
 const app = express()
 
@@ -20,6 +21,9 @@ app.use("/api/v1/auth", AuthRouter)
 
 // Found item routes
 app.use("/api/v1/items", ItemRouter);
+
+// Chats
+app.use("/api/v1/chats", ChatRouter);
 
 mongoose
   .connect(MONGO_URL)
