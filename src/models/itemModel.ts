@@ -20,7 +20,7 @@ const itemSchema = new Schema<IItem>(
         dateFound: {type: Date,required: true},
         additionalDetails: {type: String},
         imageUrl: {type: String,required: true},
-        userId: {type: Schema.Types.ObjectId,required: true}
+        userId: {type: Schema.Types.ObjectId, ref: "system_user",required: true}
     },
     {
         timestamps: true
