@@ -1,8 +1,17 @@
 import { IUser } from "../models/userModel"
 import jwt, { JwtPayload } from "jsonwebtoken"
+import "dotenv/config"
 
 const JWT_SECRET = process.env.JWT_SECRET as string
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET
+
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET is missing from .env")
+}
+
+if (!JWT_REFRESH_SECRET) {
+  throw new Error("JWT_REFRESH_SECRET is missing from .env")
+}
 
 export interface AuthPayload extends JwtPayload {
   sub: string
