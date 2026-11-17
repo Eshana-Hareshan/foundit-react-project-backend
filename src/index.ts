@@ -13,6 +13,12 @@ import cors from "cors"
 const MONGO_URL = process.env.MONGO_LOCAL_URL || ""
 const PORT = process.env.PORT || 3000
 
+// console.log("Mongo URL loaded:", Boolean(MONGO_URL));
+// console.log("Mongo URL starts correctly:",
+//   MONGO_URL.startsWith("mongodb://") ||
+//   MONGO_URL.startsWith("mongodb+srv://")
+// );
+
 const app = express()
 
 app.use(cors())
@@ -32,6 +38,7 @@ app.use("/api/v1/chats", ChatRouter);
 
 app.use("/api/v1/admin/settings", SettingsRouter);
 
+
 mongoose
   .connect(MONGO_URL)
   .then(() => {
@@ -41,4 +48,7 @@ mongoose
       console.log(`Server is running on http://localhost:${PORT}`)
     })
   })
-  .catch((err) => console.error("Fail to connect DB..!"))
+  .catch((err) => {
+    console.error("Fail to connect DB..!")
+    console.error("MongoDB Error:", err)
+  })
