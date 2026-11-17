@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addItem,getAllItems,getItemById ,updateItem} from "../controllers/itemController";
+import { addItem,getAllItems,getItemById ,updateItem,markItemAsResolved} from "../controllers/itemController";
 import { authenticate } from "../middleware/auth";
 import { upload } from "../middleware/upload";
 
@@ -13,6 +13,9 @@ router.get("/:id", getItemById);
 
 // Update an existing item
 router.put("/:id",authenticate,upload.single("image"),updateItem);
+
+// Mark an item as resolved
+router.patch("/:id/resolve", authenticate, markItemAsResolved);
 
 // Add a new item
 router.post("/",authenticate,upload.single("image"),addItem);

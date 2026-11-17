@@ -9,6 +9,17 @@ export interface IItem extends Document {
     additionalDetails?: string;
     imageUrl: string;
     userId: mongoose.Types.ObjectId;
+    isResolved: boolean;
+    status: "LOST" | "FOUND";
+    moderationStatus:
+    | "ACTIVE"
+    | "EDIT_REQUESTED"
+    | "RESTRICTED"
+    | "REMOVED";
+
+    moderationReason?: string;
+    moderatedAt?: Date;
+    moderatedBy?: mongoose.Types.ObjectId;
 }
 
 const itemSchema = new Schema<IItem>(
@@ -20,7 +31,13 @@ const itemSchema = new Schema<IItem>(
         dateFound: {type: Date,required: true},
         additionalDetails: {type: String},
         imageUrl: {type: String,required: true},
-        userId: {type: Schema.Types.ObjectId, ref: "system_user",required: true}
+        userId: {type: Schema.Types.ObjectId, ref: "system_user",required: true},
+        isResolved: {type: Boolean,default: false},
+        status: {type: String,enum: ["LOST", "FOUND"],required: true},
+        moderationStatus: {type: String,enum: ["ACTIVE", "EDIT_REQUESTED", "RESTRICTED", "REMOVED"],default: "ACTIVE"},
+        moderationReason: {type: String,default: ""},
+        moderatedAt: {type: Date},
+        moderatedBy: {type: Schema.Types.ObjectId,ref: "system_user"}
     },
     {
         timestamps: true

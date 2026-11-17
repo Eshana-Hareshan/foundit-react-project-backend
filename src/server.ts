@@ -2,6 +2,8 @@ import express, { type Request, type Response } from "express"
 import AuthRouter from "./routes/authRoutes"
 import ItemRouter from "./routes/itemRoutes";
 import ChatRouter from "./routes/chatRoutes";
+import AdminRouter from "./routes/adminRoutes";
+import SettingsRouter from "./routes/settingsRoutes";
 import mongoose from "mongoose"
 import dotenv from "dotenv"
 dotenv.config()
@@ -19,11 +21,16 @@ app.use(express.json())
 // Authentication routes
 app.use("/api/v1/auth", AuthRouter)
 
+// Admin routes
+app.use("/api/v1/admin", AdminRouter);
+
 // Found item routes
 app.use("/api/v1/items", ItemRouter);
 
 // Chats
 app.use("/api/v1/chats", ChatRouter);
+
+app.use("/api/v1/admin/settings", SettingsRouter);
 
 mongoose
   .connect(MONGO_URL)

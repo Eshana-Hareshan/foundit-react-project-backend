@@ -15,7 +15,8 @@ export const addItem = async (
             location,
             description,
             dateFound,
-            additionalDetails
+            additionalDetails,
+            status
         } = req.body;
 
         // Check required fields
@@ -24,7 +25,9 @@ export const addItem = async (
             !category ||
             !location ||
             !description ||
-            !dateFound) {
+            !dateFound ||
+            !["LOST", "FOUND"].includes(status)
+        ) {
             return res.status(400).json({
                 message: "Please provide all required item details."
             });
@@ -58,7 +61,8 @@ export const addItem = async (
             dateFound,
             additionalDetails,
             imageUrl,
-            userId
+            userId,
+            status
         });
 
         return res.status(201).json({
@@ -85,11 +89,33 @@ export const getAllItems = async (
         const limit = Math.max(1, Number(req.query.limit) || 50);
 
         const category = req.query.category as string;
+        const search = req.query.search as string;
 
-        const filter: any = {};
+        const filter: any = {
+            moderationStatus: {
+                $nin: ["RESTRICTED", "REMOVED"]
+            }
+        };
 
+        // Category filter
         if (category && category !== "All") {
             filter.category = category;
+        }
+
+        // Search by item name, category, status, location and description
+        if (search && search.trim()) {
+            const safeSearch = search.trim().replace(
+                /[.*+?^${}()|[\]\\]/g,
+                "\\$&"
+            );
+
+            filter.$or = [
+                { itemName: { $regex: safeSearch, $options: "i" } },
+                { category: { $regex: safeSearch, $options: "i" } },
+                { status: { $regex: safeSearch, $options: "i" } },
+                { location: { $regex: safeSearch, $options: "i" } },
+                { description: { $regex: safeSearch, $options: "i" } }
+            ];
         }
 
         const items = await Item.find(filter)
@@ -102,7 +128,9 @@ export const getAllItems = async (
         return res.status(200).json({
             message: "Items retrieved successfully",
             data: items,
-            total
+            total,
+            currentPage: page,
+            totalPages: Math.ceil(total / limit)
         });
 
     } catch (error) {
@@ -113,6 +141,8 @@ export const getAllItems = async (
         });
     }
 };
+
+
 
 export const getItemById = async (
     req: Request,
@@ -129,8 +159,10 @@ export const getItemById = async (
         }
 
         // Find item and retrieve owner details
-        const item = await Item.findById(id)
-            .populate("userId", "name email");
+        const item = await Item.findOne({
+            _id: id,
+            moderationStatus: { $nin: ["RESTRICTED", "REMOVED"] }
+        }).populate("userId", "name email");
 
         if (!item) {
             return res.status(404).json({
@@ -151,6 +183,7 @@ export const getItemById = async (
         });
     }
 };
+
 
 export const updateItem = async (
     req: AuthRequest,
@@ -191,7 +224,17 @@ export const updateItem = async (
             });
         }
 
-        // Update item details
+        // Prevent editing restricted or removed posts
+        if (
+            item.moderationStatus === "RESTRICTED" ||
+            item.moderationStatus === "REMOVED"
+        ) {
+            return res.status(403).json({
+                message: "This post cannot be edited because it has been restricted or removed. Please contact the administrator."
+            });
+        }
+
+        // Get updated details
         const {
             itemName,
             category,
@@ -201,6 +244,7 @@ export const updateItem = async (
             additionalDetails
         } = req.body;
 
+        // Update item details
         item.itemName = itemName;
         item.category = category;
         item.location = location;
@@ -208,10 +252,16 @@ export const updateItem = async (
         item.dateFound = dateFound;
         item.additionalDetails = additionalDetails;
 
-        // Upload a new image only if provided
+        // Upload new image only if provided
         if (req.file) {
             const imageUrl = await uploadToCloudinary(req.file);
             item.imageUrl = imageUrl;
+        }
+
+        // If Admin requested an edit, activate the post again
+        if (item.moderationStatus === "EDIT_REQUESTED") {
+            item.moderationStatus = "ACTIVE";
+            item.moderationReason = "";
         }
 
         // Save updated item
@@ -230,3 +280,71 @@ export const updateItem = async (
         });
     }
 };
+
+
+
+export const markItemAsResolved = async (
+    req: AuthRequest,
+    res: Response
+) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Validate item ID
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({
+                message: "Invalid item ID"
+            });
+        }
+
+        // 2. Get logged-in user ID
+        const userId = req.user?.sub;
+
+        if (!userId) {
+            return res.status(401).json({
+                message: "Authentication required"
+            });
+        }
+
+        // 3. Find the item
+        const item = await Item.findById(id);
+
+        if (!item) {
+            return res.status(404).json({
+                message: "Item not found"
+            });
+        }
+
+        // 4. Check whether logged-in user owns this item
+        if (item.userId.toString() !== userId) {
+            return res.status(403).json({
+                message: "You are not allowed to resolve this item"
+            });
+        }
+
+        // 5. Check whether already resolved
+        if (item.isResolved) {
+            return res.status(400).json({
+                message: "This item is already resolved"
+            });
+        }
+
+        // 6. Update item status
+        item.isResolved = true;
+
+        await item.save();
+
+        return res.status(200).json({
+            message: "Item marked as resolved successfully",
+            data: item
+        });
+
+    } catch (error) {
+        console.error("Resolve Item Error:", error);
+
+        return res.status(500).json({
+            message: "Failed to resolve item"
+        });
+    }
+};
+

@@ -45,14 +45,28 @@ export const getConversationMessages = async (
             });
         }
 
-        // 4. Retrieve messages
+        // 4. Mark incoming messages as read
+        await Message.updateMany(
+            {
+                conversationId: id,
+                senderId: { $ne: userId },
+                readBy: { $ne: userId }
+            },
+            {
+                $addToSet: {
+                    readBy: userId
+                }
+            }
+        );
+
+        // 5. Retrieve messages
         const messages = await Message.find({
             conversationId: id
         })
             .populate("senderId", "name")
             .sort({ createdAt: 1 });
 
-        // 5. Return messages
+        // 6. Return messages
         return res.status(200).json({
             message: "Messages retrieved successfully.",
             messages
@@ -117,7 +131,8 @@ export const sendMessage = async (
         const newMessage = await Message.create({
             conversationId: conversation._id,
             senderId,
-            text: text.trim()
+            text: text.trim(),
+            readBy: [senderId]
         });
 
         // Update the conversation's latest message
@@ -139,6 +154,54 @@ export const sendMessage = async (
 
         return res.status(500).json({
             message: "Failed to send message."
+        });
+    }
+};
+
+export const getUnreadMessageCount = async (
+    req: AuthRequest,
+    res: Response
+) => {
+    try {
+        // 1. Get logged-in user's ID
+        const userId = req.user?.sub;
+
+        if (!userId) {
+            return res.status(401).json({
+                message: "Please login first."
+            });
+        }
+
+        // 2. Find conversations where this user participates
+        const conversations = await Conversation.find({
+            $or: [
+                { ownerId: userId },
+                { requesterId: userId }
+            ]
+        }).select("_id");
+
+        // 3. Extract conversation IDs
+        const conversationIds = conversations.map(
+            conversation => conversation._id
+        );
+
+        // 4. Count unread messages
+        const unreadCount = await Message.countDocuments({
+            conversationId: { $in: conversationIds },
+            senderId: { $ne: userId },
+            readBy: { $ne: userId }
+        });
+
+        // 5. Return unread count
+        return res.status(200).json({
+            unreadCount
+        });
+
+    } catch (error) {
+        console.error("Unread Message Count Error:", error);
+
+        return res.status(500).json({
+            message: "Failed to get unread message count."
         });
     }
 };
