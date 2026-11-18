@@ -14,8 +14,7 @@ import {
     evaluateItemsWithGemini
 } from "../services/geminiMatchingService";
 
-const TEST_DB_URL =
-    "mongodb+srv://eshanahbandara_db_user:nNuVlNyqx8GeLauM@foundit.izptn0o.mongodb.net/foundit_test_db?retryWrites=true&w=majority";
+const TEST_DB_URL =process.env.MONGO_LOCAL_URL;
 
 async function runTests() {
     console.log("=================================================");
