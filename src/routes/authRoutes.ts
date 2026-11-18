@@ -1,4 +1,4 @@
-import { Router } from "express"
+import { Router } from "express";
 import {
   getMyDetails,
   getRefreshToken,
@@ -7,19 +7,25 @@ import {
   register,
   verifyOTP,
   forgotPassword,
-  resetPassword
-} from "../controllers/authController"
-import { authenticate } from "../middleware/auth"
+  resetPassword,
+  updateProfile,
+  changePassword
+} from "../controllers/authController";
+import { authenticate } from "../middleware/auth";
 
-const router = Router()
+const router = Router();
 
-router.post("/register", register)
+router.post("/register", register);
 router.post("/verify-otp", verifyOTP);
-router.post("/login", login)
+router.post("/login", login);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
-router.post("/google", loginGoogle)
-router.post("/refresh", getRefreshToken)
-router.get("/me", authenticate, getMyDetails)
+router.post("/google", loginGoogle);
+router.post("/refresh", getRefreshToken);
+router.get("/me", authenticate, getMyDetails);
 
-export default router
+// Profile and Password management (Authenticated)
+router.put("/profile", authenticate, updateProfile);
+router.put("/change-password", authenticate, changePassword);
+
+export default router;

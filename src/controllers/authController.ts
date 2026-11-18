@@ -76,11 +76,6 @@ const clearPasswordResetOTP = (user: any) => {
     user.resetPasswordOTPSentAt = undefined;
 };
 
-
-// ========================================
-// REGISTER
-// ========================================
-
 export const register = async (
     req: Request,
     res: Response
@@ -119,72 +114,43 @@ export const register = async (
             });
         }
 
-        // 3. Find existing account
+        // 3. Check email verification setting
+        // Do not create or update any user details when disabled.
+        if (settings?.emailVerification === false) {
+            return res.status(403).json({
+                message: "Registration is unavailable because email verification is disabled."
+            });
+        }
+
+        // 4. Find existing account
         const existingUser = await UserModel.findOne({
             email: normalizedEmail
         });
 
         if (existingUser) {
 
-            // Prevent duplicate verified accounts
+            // A verified account cannot register again
             if (existingUser.isEmailVerified) {
                 return res.status(409).json({
                     message: "An account with this email already exists."
                 });
             }
 
-            // Prevent duplicate registration while OTP is active
-            if (
-                existingUser.otp &&
-                existingUser.otpExpires &&
-                existingUser.otpExpires.getTime() > Date.now() &&
-                existingUser.otpAttempts < 5
-            ) {
-                return res.status(409).json({
-                    message: "An OTP has already been sent. Please verify your email."
-                });
-            }
+            // An unverified account can receive a fresh OTP.
+            // The previous active OTP will be replaced.
         }
 
-        // 4. Hash password
+        // 5. Hash password
         const hashedPassword = await bcrypt.hash(
             password,
             10
         );
 
-        // 5. Handle disabled email verification
-        if (settings?.emailVerification === false) {
-
-            if (existingUser) {
-                existingUser.name = name.trim();
-                existingUser.password = hashedPassword;
-                existingUser.isEmailVerified = true;
-
-                clearRegistrationOTP(existingUser);
-
-                await existingUser.save();
-
-            } else {
-                await UserModel.create({
-                    name: name.trim(),
-                    email: normalizedEmail,
-                    password: hashedPassword,
-                    isEmailVerified: true,
-                    otpAttempts: 0
-                });
-            }
-
-            return res.status(201).json({
-                message: "Registration successful. You can now log in."
-            });
-        }
-
-        // 6. Generate registration OTP
+        // 6. Generate new OTP
         const otp = crypto
             .randomInt(100000, 1000000)
             .toString();
 
-        // Use SHA-256 consistently
         const hashedOTP = hashOTP(otp);
 
         const otpExpires = new Date(
@@ -195,6 +161,8 @@ export const register = async (
         let user;
 
         if (existingUser) {
+
+            // Update existing unverified account
             existingUser.name = name.trim();
             existingUser.password = hashedPassword;
             existingUser.otp = hashedOTP;
@@ -204,6 +172,8 @@ export const register = async (
             user = await existingUser.save();
 
         } else {
+
+            // Create a new unverified account
             user = await UserModel.create({
                 name: name.trim(),
                 email: normalizedEmail,
@@ -215,8 +185,9 @@ export const register = async (
             });
         }
 
-        // 8. Send verification email
+        // 8. Send OTP email
         try {
+
             await sendOTPEmail(normalizedEmail, otp);
 
         } catch (emailError) {
@@ -227,9 +198,13 @@ export const register = async (
             );
 
             if (!existingUser) {
+
+                // Remove newly created account if email fails
                 await UserModel.findByIdAndDelete(user._id);
 
             } else {
+
+                // Clear OTP if email sending fails
                 clearRegistrationOTP(user);
                 await user.save();
             }
@@ -239,8 +214,10 @@ export const register = async (
             });
         }
 
+        // 9. Successful registration response
         return res.status(201).json({
-            message: "Registration successful. Please check your email for the OTP."
+            message: "Registration successful. Please check your email for the OTP.",
+            requiresVerification: true
         });
 
     } catch (error: any) {
@@ -261,9 +238,6 @@ export const register = async (
 };
 
 
-// ========================================
-// VERIFY REGISTRATION OTP
-// ========================================
 
 export const verifyOTP = async (
     req: Request,
@@ -979,6 +953,172 @@ export const getRefreshToken = async (
 
         return res.status(403).json({
             message: "Invalid or expired refresh token."
+        });
+    }
+};
+
+
+// ========================================
+// UPDATE USER PROFILE
+// ========================================
+
+export const updateProfile = async (
+    req: AuthRequest,
+    res: Response
+) => {
+    try {
+        const userId = req.user?.sub;
+
+        if (!userId) {
+            return res.status(401).json({
+                message: "Authentication required."
+            });
+        }
+
+        const { name } = req.body;
+
+        if (
+            typeof name !== "string" ||
+            !name.trim()
+        ) {
+            return res.status(400).json({
+                message: "Username is required."
+            });
+        }
+
+        const trimmedName = name.trim();
+
+        if (trimmedName.length < 2 || trimmedName.length > 50) {
+            return res.status(400).json({
+                message: "Username must be between 2 and 50 characters."
+            });
+        }
+
+        const user = await UserModel.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User account not found."
+            });
+        }
+
+        if (user.isSuspended) {
+            return res.status(403).json({
+                message: "Your account has been suspended."
+            });
+        }
+
+        user.name = trimmedName;
+        await user.save();
+
+        return res.status(200).json({
+            message: "Profile updated successfully.",
+            data: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                roles: user.roles
+            }
+        });
+
+    } catch (error) {
+        console.error("Update profile error:", error);
+
+        return res.status(500).json({
+            message: "Failed to update profile."
+        });
+    }
+};
+
+
+// ========================================
+// CHANGE PASSWORD
+// ========================================
+
+export const changePassword = async (
+    req: AuthRequest,
+    res: Response
+) => {
+    try {
+        const userId = req.user?.sub;
+
+        if (!userId) {
+            return res.status(401).json({
+                message: "Authentication required."
+            });
+        }
+
+        const { currentPassword, newPassword } = req.body;
+
+        if (
+            typeof currentPassword !== "string" ||
+            typeof newPassword !== "string" ||
+            !currentPassword ||
+            !newPassword
+        ) {
+            return res.status(400).json({
+                message: "Current password and new password are required."
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                message: "New password must contain at least 6 characters."
+            });
+        }
+
+        const user = await UserModel.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User account not found."
+            });
+        }
+
+        if (user.isSuspended) {
+            return res.status(403).json({
+                message: "Your account has been suspended."
+            });
+        }
+
+        // Verify current password
+        const isCurrentMatch = await bcrypt.compare(
+            currentPassword,
+            user.password
+        );
+
+        if (!isCurrentMatch) {
+            return res.status(400).json({
+                message: "Current password is incorrect."
+            });
+        }
+
+        // Prevent setting the exact same password
+        const isSamePassword = await bcrypt.compare(
+            newPassword,
+            user.password
+        );
+
+        if (isSamePassword) {
+            return res.status(400).json({
+                message: "New password cannot be the same as your current password."
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+        await user.save();
+
+        return res.status(200).json({
+            message: "Password changed successfully."
+        });
+
+    } catch (error) {
+        console.error("Change password error:", error);
+
+        return res.status(500).json({
+            message: "Failed to change password."
         });
     }
 };

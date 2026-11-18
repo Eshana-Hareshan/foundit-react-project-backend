@@ -3,6 +3,11 @@ import mongoose from "mongoose";
 import Item from "../models/itemModel";
 import { AuthRequest } from "../middleware/auth";
 import { uploadToCloudinary } from "../util/cloudinary";
+import {
+    findAndProcessMatches,
+    invalidateMatchesForItem
+} from "../services/geminiMatchingService";
+import MatchResult from "../models/matchResultModel";
 
 export const addItem = async (
     req: AuthRequest,
@@ -65,8 +70,15 @@ export const addItem = async (
             status
         });
 
+        // Trigger AI matching in the background (non-blocking)
+        setImmediate(() => {
+            findAndProcessMatches(newItem).catch((err) => {
+                console.error("Background AI matching error for item:", newItem._id, err);
+            });
+        });
+
         return res.status(201).json({
-            message: "Found item added successfully!",
+            message: `${status === "LOST" ? "Lost" : "Found"} item added successfully!`,
             item: newItem
         });
 
@@ -74,7 +86,7 @@ export const addItem = async (
         console.error("Add Item Error:", error);
 
         return res.status(500).json({
-            message: "Failed to add found item."
+            message: "Failed to add item."
         });
     }
 };
@@ -267,6 +279,14 @@ export const updateItem = async (
         // Save updated item
         await item.save();
 
+        // Invalidate cached match results and re-evaluate matches in background
+        await invalidateMatchesForItem(item._id.toString());
+        setImmediate(() => {
+            findAndProcessMatches(item).catch((err) => {
+                console.error("Background AI re-matching error for item:", item._id, err);
+            });
+        });
+
         return res.status(200).json({
             message: "Item updated successfully",
             data: item
@@ -334,6 +354,9 @@ export const markItemAsResolved = async (
 
         await item.save();
 
+        // Invalidate cached match results so resolved items are excluded from future matching
+        await invalidateMatchesForItem(item._id.toString());
+
         return res.status(200).json({
             message: "Item marked as resolved successfully",
             data: item
@@ -348,3 +371,111 @@ export const markItemAsResolved = async (
     }
 };
 
+/**
+ * Get AI matching suggestions for an item.
+ */
+export const getItemMatches = async (
+    req: Request,
+    res: Response
+) => {
+    try {
+        const { id } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({
+                message: "Invalid item ID"
+            });
+        }
+
+        const item = await Item.findById(id);
+
+        if (!item) {
+            return res.status(404).json({
+                message: "Item not found"
+            });
+        }
+
+        const isLost = item.status === "LOST";
+        const query = isLost ? { lostItemId: id } : { foundItemId: id };
+        const minScore = Number(process.env.MATCH_MIN_SCORE) || 65;
+
+        // Fetch matches meeting threshold
+        let matchResults = await MatchResult.find({
+            ...query,
+            matchScore: { $gte: minScore },
+            isPossibleMatch: true
+        })
+            .populate(
+                isLost ? "foundItemId" : "lostItemId",
+                "itemName category location dateFound imageUrl description status isResolved moderationStatus"
+            )
+            .sort({ matchScore: -1 });
+
+        // If no matches are cached yet and item is unresolved & active, run match process
+        if (
+            matchResults.length === 0 &&
+            !item.isResolved &&
+            item.moderationStatus === "ACTIVE"
+        ) {
+            await findAndProcessMatches(item);
+
+            matchResults = await MatchResult.find({
+                ...query,
+                matchScore: { $gte: minScore },
+                isPossibleMatch: true
+            })
+                .populate(
+                    isLost ? "foundItemId" : "lostItemId",
+                    "itemName category location dateFound imageUrl description status isResolved moderationStatus"
+                )
+                .sort({ matchScore: -1 });
+        }
+
+        // Filter out resolved, restricted, or removed items
+        const formatted = matchResults
+            .map((mr) => {
+                const matchedItem: any = isLost ? mr.foundItemId : mr.lostItemId;
+                if (
+                    !matchedItem ||
+                    matchedItem.isResolved ||
+                    matchedItem.moderationStatus === "RESTRICTED" ||
+                    matchedItem.moderationStatus === "REMOVED"
+                ) {
+                    return null;
+                }
+
+                return {
+                    _id: mr._id,
+                    matchScore: mr.matchScore,
+                    isPossibleMatch: mr.isPossibleMatch,
+                    explanation: mr.explanation,
+                    matchingDetails: mr.matchingDetails,
+                    conflictingDetails: mr.conflictingDetails,
+                    analysisDate: mr.analysisDate,
+                    matchedItem: {
+                        _id: matchedItem._id,
+                        itemName: matchedItem.itemName,
+                        category: matchedItem.category,
+                        location: matchedItem.location,
+                        dateFound: matchedItem.dateFound,
+                        imageUrl: matchedItem.imageUrl,
+                        description: matchedItem.description,
+                        status: matchedItem.status,
+                        isResolved: matchedItem.isResolved
+                    }
+                };
+            })
+            .filter(Boolean);
+
+        return res.status(200).json({
+            message: "Matches retrieved successfully",
+            data: formatted
+        });
+    } catch (error) {
+        console.error("Get Item Matches Error:", error);
+
+        return res.status(500).json({
+            message: "Failed to retrieve item matches"
+        });
+    }
+};

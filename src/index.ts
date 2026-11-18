@@ -1,54 +1,56 @@
-import express, { type Request, type Response } from "express"
-import AuthRouter from "./routes/authRoutes"
+import express, { type Request, type Response } from "express";
+import AuthRouter from "./routes/authRoutes";
 import ItemRouter from "./routes/itemRoutes";
 import ChatRouter from "./routes/chatRoutes";
 import AdminRouter from "./routes/adminRoutes";
 import SettingsRouter from "./routes/settingsRoutes";
-import mongoose from "mongoose"
-import dotenv from "dotenv"
-dotenv.config()
+import NotificationRouter from "./routes/notificationRoutes";
+import ReportRouter from "./routes/reportRoutes";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+dotenv.config();
 
-import cors from "cors"
+import cors from "cors";
 
-const MONGO_URL = process.env.MONGO_LOCAL_URL || ""
-const PORT = process.env.PORT || 3000
+const MONGO_URL = process.env.MONGO_LOCAL_URL || "";
+const PORT = process.env.PORT || 3000;
 
-// console.log("Mongo URL loaded:", Boolean(MONGO_URL));
-// console.log("Mongo URL starts correctly:",
-//   MONGO_URL.startsWith("mongodb://") ||
-//   MONGO_URL.startsWith("mongodb+srv://")
-// );
+const app = express();
 
-const app = express()
-
-app.use(cors())
-app.use(express.json())
+app.use(cors());
+app.use(express.json());
 
 // Authentication routes
-app.use("/api/v1/auth", AuthRouter)
+app.use("/api/v1/auth", AuthRouter);
 
 // Admin routes
 app.use("/api/v1/admin", AdminRouter);
 
-// Found item routes
+// Item routes
 app.use("/api/v1/items", ItemRouter);
 
 // Chats
 app.use("/api/v1/chats", ChatRouter);
 
+// Settings
 app.use("/api/v1/admin/settings", SettingsRouter);
 
+// Notifications
+app.use("/api/v1/notifications", NotificationRouter);
+
+// Reports
+app.use("/api/v1/reports", ReportRouter);
 
 mongoose
   .connect(MONGO_URL)
   .then(() => {
-    console.log("DB connected..!")
+    console.log("DB connected..!");
 
     app.listen(PORT, () => {
-      console.log(`Server is running on http://localhost:${PORT}`)
-    })
+      console.log(`Server is running on http://localhost:${PORT}`);
+    });
   })
   .catch((err) => {
-    console.error("Fail to connect DB..!")
-    console.error("MongoDB Error:", err)
-  })
+    console.error("Fail to connect DB..!");
+    console.error("MongoDB Error:", err);
+  });

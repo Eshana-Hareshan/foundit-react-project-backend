@@ -1,7 +1,10 @@
-
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
-import { getMyNotifications, markNotificationAsRead } from "../controllers/notificationController";
+import {
+    getMyNotifications,
+    markNotificationAsRead,
+    markAllNotificationsAsRead
+} from "../controllers/notificationController";
 
 const router = Router();
 
@@ -11,7 +14,10 @@ router.use(authenticate);
 // Get notifications for the logged-in user
 router.get("/", getMyNotifications);
 
-// Mark a notification as read
+// Mark all notifications as read (must precede /:id/read)
+router.patch("/read-all", markAllNotificationsAsRead);
+
+// Mark a single notification as read
 router.patch("/:id/read", markNotificationAsRead);
 
 export default router;
